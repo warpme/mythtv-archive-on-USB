@@ -1,0 +1,19 @@
+[Unit]
+Description=@MythtTV ExtUSB TVArchive Sync Helper
+After=mythbackend.service
+
+
+[Service]
+# ExecStart=/bin/sh -c "/usr/bin/perl /usr/local/bin/osd_notify.pl %I tvarchive"
+ExecStart=/bin/sh -c "/usr/local/bin/run-tv-archive.sh %I"
+User=mythtv
+Group=mythtv
+Type=oneshot
+StandardOutput=syslog
+IOSchedulingClass=idle
+IOSchedulingPriority=7
+Nice=+15
+
+
+[Install]
+WantedBy=multi-user.target
