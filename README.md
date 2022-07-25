@@ -95,3 +95,7 @@ How to make given group an archived group (called i.e. "5 Archiwum")
 
  6.  You are done.
 
+
+Note: this solution requires media-automounter from my git
+
+happy watching!

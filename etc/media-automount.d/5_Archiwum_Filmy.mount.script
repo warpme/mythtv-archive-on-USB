@@ -1,0 +1,16 @@
+#!/bin/sh
+
+# This script is called by media-automount when ext. /dev/sdX device is connected.
+# Script name must be <label>.script (or kernel <devX>.script if devide has not label)
+
+archive_name="5_Archiwum_Filmy"
+
+logger -st "media-automount" "script ${archive_name}.script started"
+
+/usr/bin/perl /usr/local/bin/osd_notify.pl ${archive_name} connected tvarchive
+
+su mythtv -c "/usr/local/bin/run-tv-archive.sh ${archive_name} connected"
+
+logger -st "media-automount" "script ${archive_name}.script ended"
+
+exit 0

@@ -166,31 +166,35 @@ Log "Directory to move recordings      : \"$arch_path\""
 
 # Parameters to access DB
 : ${MYTHCONFDIR:="$HOME/.mythtv"}
-if [ -r "$MYTHCONFDIR/mysql.txt" ]; then
-  export MYTHCONFDIR
-  # mythbackend in Fedora packages has $HOME=/etc/mythtv
-  elif [ -r "$HOME/mysql.txt" ]; then
-    export MYTHCONFDIR="$HOME"
-  elif [ -r "$HOME/.mythtv/mysql.txt" ]; then
-    export MYTHCONFDIR="$HOME/.mythtv"
-  elif [ -r "/home/mythtv/.mythtv/mysql.txt" ]; then
-    export MYTHCONFDIR="/home/mythtv/.mythtv"
-  elif [ -r "/etc/mythtv/mysql.txt" ]; then
-    export MYTHCONFDIR="/etc/mythtv"
+if [ -r "$MYTHCONFDIR/config.xml" ]; then
+    export MYTHCONFDIR
+    # mythbackend in Fedora packages has $HOME=/etc/mythtv
+    elif [ -r "$HOME/config.xml" ]; then
+        export MYTHCONFDIR="$HOME"
+    elif [ -r "$HOME/.mythtv/config.xml" ]; then
+        export MYTHCONFDIR="$HOME/.mythtv"
+    elif [ -r "/home/mythtv/.mythtv/config.xml" ]; then
+        export MYTHCONFDIR="/home/mythtv/.mythtv"
+    elif [ -r "/etc/mythtv/config.xml" ]; then
+        export MYTHCONFDIR="/etc/mythtv"
 fi
 
 
 # mythtv mysql database
-if [ -r "$MYTHCONFDIR/mysql.txt" ]; then
-  #MYTHHOST=$(grep DBHostName <"$MYTHCONFDIR/mysql.txt" | awk -F= '{print $2}')
-  MYTHUSER=$(grep DBUserName <"$MYTHCONFDIR/mysql.txt" | awk -F= '{print $2}')
-  MYTHPASS=$(grep DBPassword <"$MYTHCONFDIR/mysql.txt" | awk -F= '{print $2}')
-  MYTHBASE=$(grep DBName     <"$MYTHCONFDIR/mysql.txt" | awk -F= '{print $2}')
-  Log "Using database"
-  Log "    -Host : $MYTHHOST"
-  Log "    -User : $MYTHUSER"
-  Log "    -Pass : $MYTHPASS"
-  Log "    -Dbase: $MYTHBASE"
+if [ -r "$MYTHCONFDIR/config.xml" ]; then
+    MYTHHOST=$(grep '<Host>'         <"$MYTHCONFDIR/config.xml" | sed -e 's/\s*<Host>\s*\(.*\)\s*<\/Host>\s*/\1/') #'
+    MYTHUSER=$(grep '<UserName>'     <"$MYTHCONFDIR/config.xml" | sed -e 's/\s*<UserName>\s*\(.*\)\s*<\/UserName>\s*/\1/') #'
+    MYTHPASS=$(grep '<Password>'     <"$MYTHCONFDIR/config.xml" | sed -e 's/\s*<Password>\s*\(.*\)\s*<\/Password>\s*/\1/') #'
+    MYTHBASE=$(grep '<DatabaseName>' <"$MYTHCONFDIR/config.xml" | sed -e 's/\s*<DatabaseName>\s*\(.*\)\s*<\/DatabaseName>\s*/\1/') #'
+    Log ""
+    Log "Using database"
+    Log "    -Host : $MYTHHOST"
+    Log "    -User : $MYTHUSER"
+    Log "    -Pass : $MYTHPASS"
+    Log "    -Dbase: $MYTHBASE"
+    Log ""
+else
+    Log "Can not find config.xml with DB settings!"
 fi
 
 # Process an SQL query
@@ -205,89 +209,6 @@ Sql() {
 
 
 
-
-#------------------------------------------------------------------------------
-if [ "$action" = "add" ]; then
-
-  Log "Adding StorageGroup called \"${arch_grp_name}\"..."
-  rc=$(Sql -Bse "INSERT INTO storagegroup (groupname, dirname, hostname) VALUES ('$arch_grp_name', '${arch_path}/', 'mythtv');") #"
-  Log $rc
-
-  Log "Creating UDEV rule called \"99-ext-usb-tvarchive-${group}.rules\"..."
-  rc=`cat << 'stmt1' | sed -e "s@|group|@${group}@" > /etc/udev/rules.d/99-ext-usb-tvarch-${group}.rules
-
-SUBSYSTEM=="block", KERNEL=="sd[c-z][0-9]", ACTION=="add",    GOTO="begin_add"
-SUBSYSTEM=="block", KERNEL=="sd[c-z][0-9]", ACTION=="remove", GOTO="begin_remove"
-GOTO="end"
-
-LABEL="begin_add"
-  SYMLINK+="usbhd-%k", GROUP="root"
-  ENV{ID_FS_LABEL_ENC}="usbhd-%k"
-  IMPORT{program}="/sbin/blkid -o udev -p $tempnode"
-  ENV{ID_FS_LABEL_ENC}=="|group|", GOTO="tvarch_begin"
-  GOTO="end"
-
-LABEL="tvarch_begin"
-  ENV{MOUNT_DIR}="/myth/tv-archive/$env{ID_FS_LABEL_ENC}"
-  RUN+="/bin/mkdir -p $env{MOUNT_DIR}"
-  RUN+="/bin/mount -t auto -o rw,noauto,async,noexec,nodev,noatime /dev/%k $env{MOUNT_DIR}"
-  RUN+="/bin/chmod 777 $env{MOUNT_DIR}"
-  TAG+="systemd", ENV{SYSTEMD_WANTS}+="ext-usb-tvarch@\x20$env{ID_FS_LABEL_ENC}\x20connected.service"
-  GOTO="end"
-
-LABEL="begin_remove"
-  ENV{ID_FS_LABEL_ENC}=="|group|", GOTO="tvarch_unmount"
-  GOTO="end"
-
-LABEL="tvarch_unmount"
-  RUN+="/usr/bin/sleep 1"
-  TAG+="systemd", ENV{SYSTEMD_WANTS}+="ext-usb-tvarch@\x20$env{ID_FS_LABEL_ENC}\x20disconnected.service"
-  RUN+="/bin/umount -l $env{MOUNT_DIR}"
-
-LABEL="end"
-stmt1`
-
-  Log "Loading new rule to UDEV..."
-  udevadm control --reload-rules
-
-  Log "Creating archive dir for \"${arch_grp_name}\"..."
-  if [ -e ${arch_path} ]; then
-    Log "${arch_path} exist !. Skiping..."
-  else
-    mkdir -p -m777 ${arch_path}
-    Log "Make sure to label HDD with label \"${group}\"!"
-  fi
-  exit 0
-fi
-#------------------------------------------------------------------------------
-
-
-
-
-
-#------------------------------------------------------------------------------
-if [ "$action" = "remove" ]; then
-
-  Log "Removing StorageGroup called \"$group\"..."
-  rc=$(Sql -Bse "DELETE FROM storagegroup WHERE groupname LIKE '${group}';")
-  Log $rc
-
-  Log "Removing UDEV rule \"99-ext-usb-tvarchive-${group}.rule\"..."
-  mv /etc/udev/rules.d/99-ext-usb-tvarchive-${group}.rule /etc/udev/rules.d/99-ext-usb-tvarch-${group}.rule.delete
-
-  Log "Unloading new rule from UDEV..."
-  udevadm control --reload-rules
-
-  Log "Removing archive dir for \"${arch_grp_name}\"..."
-  if [ -e ${arch_path} ]; then
-    mv ${arch_path} ${arch_path}.deleted
-    Log "Make sure to remove corresponding udev rule!"
-  else
-    Log "${arch_path} not exists !"
-  fi
-  exit 0
-fi
-#------------------------------------------------------------------------------
 
 
 
@@ -323,8 +244,7 @@ for dir in ${recordings} ; do
 
 done
 
-#exit 0
-# sleep 600
+
 
 
 #------------------------------------------------------------------------------
@@ -377,7 +297,7 @@ if [ "$action" = "connected" ]; then
       fi
     fi
   done
-exit
+
   Log "Validating all files in archive dir..."
 
   if [ ! -e ${arch_path}/.to-delete ]; then
@@ -408,8 +328,13 @@ exit
     /usr/bin/perl /usr/local/bin/osd_notify.pl "${free_space}" synchronized tvarchive
   fi
 
+  Log "Creating ${group}.connected semphore at /var/lib/run-tv-archive dir ..."
+  mkdir -p /var/lib/run-tv-archive/
+  touch /var/lib/run-tv-archive/${group}.connected
+
   Log "Exiting with sucess!"
   exit 0
+
 fi
 #------------------------------------------------------------------------------
 
@@ -491,8 +416,13 @@ if [ "$action" = "disconnected" ]; then
   done
 
   /usr/bin/perl /usr/local/bin/osd_notify.pl "${arch_grp_name}" offline tvarchive
+
+  Log "Deleting ${group}.connected semphore from /var/lib/run-tv-archive dir ..."
+  rm -f /var/lib/run-tv-archive/${group}.connected
+
   Log "All done! Exiting with sucess..."
   exit 0
+
 fi
 #------------------------------------------------------------------------------
 

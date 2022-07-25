@@ -3,6 +3,7 @@
 # osd_notify.pl <vol_name> <action> <type>
 #
 
+use Shell;
 use strict;
 use warnings;
 use IO::Socket;
@@ -12,8 +13,10 @@ use feature 'switch';
 ######################################################################
 #########   User Defined Variables                           #########
 ######################################################################
-# my $notify_ip="192.168.1.130";
-my $notify_ip   = "192.168.1.1,192.168.1.128,192.168.1.129,192.168.1.130,192.168.1.131,192.168.1.132";
+
+# pattern used to filter IP addresess: all IP hving this string will
+# be uses to sent notifications
+my $ip_wildcard = "192.168.1.1";
 my $debug       = 0;
 my $osd_timeout = 10;
 
@@ -36,11 +39,30 @@ else {
   exit 1
   }
 
+sub get_active_ip_list {
+    my $cmd = "arp -n | grep -v \"incomplete\" | grep \"".$ip_wildcard."\" | cut -d \" \" -f1 |";
+    my $ip_list = "";
+    print ("Active IP cmd:".$cmd."\n") if ($debug);
+
+    my $rc = open(SHELL, $cmd);
+    while (<SHELL>) {
+        $_ =~ s/Address//;
+        $_ =~ s/\n//;
+        $ip_list = $ip_list.$_." ";
+    }
+    close(SHELL);
+
+    print ("Active IP list:".$ip_list."\n") if ($debug);
+
+    return $ip_list
+}
+
+
 sub send_osd_notify_to_all_hosts {
     my ($title,$origin,$description,$extra,$image,$progress_text,$progress,$timeout,$style,$fe_ip_list) = @_;
     my @dest_list = ();
     my $msg = "";
-    @dest_list = split(/,/, $fe_ip_list);
+    @dest_list = split(/ /, $fe_ip_list);
     print ("OSD_notify:\n  title=\"$title\"\n  origin=\"$origin\"\n  description=\"$description\"\n  extra=\"$extra\"\n  image=\"$image\"\n  progress_txt=\"$progress_text\"\n  progress=$progress\n  style=\"$style\"\n") if ($debug);
 
     for (@dest_list) {
@@ -68,9 +90,12 @@ sub send_osd_notify_to_all_hosts {
     }
 }
 
-print "OSD_notify: param=".$param."\n";
-print "OSD_notify: action=".$action."\n";
-print "OSD_notify: type=".$type."\n";
+my $notify_ip = get_active_ip_list();
+
+print "IP notified : ".$notify_ip."\n";
+print "OSD_notify  : param=".$param."\n";
+print "OSD_notify  : action=".$action."\n";
+print "OSD_notify  : type=".$type."\n";
 
     if (($action eq "connected") & ($type eq "movies")) {
         &send_osd_notify_to_all_hosts(
